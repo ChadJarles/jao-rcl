@@ -363,6 +363,18 @@ body{font-family:var(--f);background:var(--bg);color:var(--txt);font-size:14px;l
 
 <div id="modal-wrap" style="display:none"></div>
 <div class="toast" id="toast"></div>
+<div class="login-overlay" id="login-overlay">
+  <div class="login-box">
+    <div class="login-logo">JAO</div>
+    <div class="login-title">Registration Checklist</div>
+    <div class="login-sub">Sign in with your Microsoft 365 account to access the RCL tool.</div>
+    <button class="login-btn" onclick="odSignIn()">
+      <svg viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
+      Sign in with Microsoft
+    </button>
+    <div class="login-err" id="login-err"></div>
+  </div>
+</div>
 </div>
 </div>
 
@@ -2114,7 +2126,8 @@ onTypeFilterChange();
 renderList();
 applyMobileLayout();
 applyConfigToUI();
-// OneDrive sync disabled in demo mode
+showLoginOverlay();
+initMsal();
 </script>
 </body>
 </html>
