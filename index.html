@@ -302,12 +302,11 @@ body{font-family:var(--f);background:var(--bg);color:var(--txt);font-size:14px;l
   <div class="hdr-brand">
     <span class="logo">JAO</span>
     <div class="hdr-sep"></div>
-    <span class="hdr-title">Registration Checklist (RCL)</span>
+    <span class="hdr-title" id="hdr-title">Registration Checklist (RCL)</span>
   </div>
   <div class="hdr-actions">
     <button class="btn ghost sm mob-back" onclick="showSidebar()" style="display:none">&#8592; Cases</button>
-    <span id="sync-status" class="sync-status" title="OneDrive sync status"></span>
-    <button id="od-btn" class="btn ghost sm" onclick="odSignIn()">&#9729; Sign in</button>
+    <button class="btn ghost sm" onclick="openAdmin()" title="Admin settings">&#9881;</button>
     <button class="btn ghost sm" onclick="exportData()">&#8595; Export</button>
     <button class="btn ghost sm" onclick="document.getElementById('imp').click()">&#8593; Import</button>
     <input type="file" id="imp" accept=".json" style="display:none" onchange="importData(event)"/>
@@ -364,17 +363,7 @@ body{font-family:var(--f);background:var(--bg);color:var(--txt);font-size:14px;l
 
 <div id="modal-wrap" style="display:none"></div>
 <div class="toast" id="toast"></div>
-<div class="login-overlay" id="login-overlay">
-  <div class="login-box">
-    <div class="login-logo">JAO</div>
-    <div class="login-title">Registration Checklist</div>
-    <div class="login-sub">Sign in with your Microsoft 365 account to access the RCL tool.</div>
-    <button class="login-btn" onclick="odSignIn()">
-      <svg viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg>
-      Sign in with Microsoft
-    </button>
-    <div class="login-err" id="login-err"></div>
-  </div>
+</div>
 </div>
 
 <script>
@@ -647,13 +636,35 @@ const MANDATORY_ESIG_S2=[...ESIG_LEGAL_CHECKS,...ESIG_KYC_CHECKS];
 const MANDATORY_ESIG_S3=[...ESIG_SIG_CHECKS,...ESIG_COUNTERSIG_CHECKS];
 
 const STORAGE_KEY='jao-rcl-v3';
+const ADMIN_KEY='jao-rcl-admin-cfg';
 
-// ── OneDrive / MSAL config ──────────────────────────────────────────
-const OD_CLIENT_ID='0ccab729-7d2b-43ac-a341-fc8285f611a2';
-const OD_TENANT_ID='367c4a6e-4a4f-4dd1-995e-ab80d0ec3064';
-const OD_FILE='jao-rcl-data.json';
-const OD_FOLDER='JAO RCL';
-const OD_SCOPES=['Files.ReadWrite','User.Read'];
+// ── Config defaults ─────────────────────────────────────────────────
+const CONFIG_DEFAULTS={
+  appTitle:'Registration Checklist (RCL)',
+  pageSize:20,
+  odClientId:'0ccab729-7d2b-43ac-a341-fc8285f611a2',
+  odTenantId:'367c4a6e-4a4f-4dd1-995e-ab80d0ec3064',
+  odFolder:'JAO RCL',
+  odFile:'jao-rcl-data.json',
+  odSharePointSite:'jaosa.sharepoint.com:/sites/JAO',
+  adminPassword:'jao-admin',
+};
+
+function loadConfig(){
+  try{return Object.assign({},CONFIG_DEFAULTS,JSON.parse(localStorage.getItem(ADMIN_KEY)||'{}'));}
+  catch(e){return {...CONFIG_DEFAULTS};}
+}
+function saveConfig(cfg){localStorage.setItem(ADMIN_KEY,JSON.stringify(cfg));}
+
+let CFG=loadConfig();
+
+// Apply config to live constants
+let OD_CLIENT_ID=CFG.odClientId;
+let OD_TENANT_ID=CFG.odTenantId;
+let OD_FILE=CFG.odFile;
+let OD_FOLDER=CFG.odFolder;
+let PAGE_SIZE=CFG.pageSize;
+const OD_SCOPES=['Files.ReadWrite','Sites.ReadWrite.All','User.Read'];
 
 let msalInstance=null;
 let odAccount=null;
@@ -715,7 +726,7 @@ async function odLoad(){
   setSyncStatus('syncing','Loading…');
   const token=await odGetToken();if(!token){setSyncStatus('error','Not signed in');return;}
   try{
-    const res=await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${OD_FOLDER}/${OD_FILE}:/content`,{headers:{Authorization:'Bearer '+token}});
+    const res=await fetch(`https://graph.microsoft.com/v1.0/sites/${CFG.odSharePointSite}/drive/root:/${OD_FOLDER}/${OD_FILE}:/content`,{headers:{Authorization:'Bearer '+token}});
     if(res.status===404){setSyncStatus('syncing','Creating file…');await odSaveNow();}
     else if(res.ok){
       const data=await res.json();
@@ -734,7 +745,7 @@ async function odSaveNow(){
   const token=await odGetToken();if(!token) return;
   try{
     setSyncStatus('syncing','Saving…');
-    const res=await fetch(`https://graph.microsoft.com/v1.0/me/drive/root:/${OD_FOLDER}/${OD_FILE}:/content`,{
+    const res=await fetch(`https://graph.microsoft.com/v1.0/sites/${CFG.odSharePointSite}/drive/root:/${OD_FOLDER}/${OD_FILE}:/content`,{
       method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(cases,null,2)
     });
     if(res.ok){setSyncStatus('synced','✓ OneDrive');}else{throw new Error('HTTP '+res.status);}
@@ -770,7 +781,7 @@ async function odSignIn(){
 
 // ── Local persistence (always runs as fallback) ─────────────────────
 function loadCases(){try{cases=JSON.parse(localStorage.getItem(STORAGE_KEY)||'[]');}catch(e){cases=[];}}
-function saveCases(){localStorage.setItem(STORAGE_KEY,JSON.stringify(cases));odSaveDebounced();}
+function saveCases(){localStorage.setItem(STORAGE_KEY,JSON.stringify(cases));}
 
 let cases=[];
 let activeId=null;
@@ -780,7 +791,7 @@ let statusFilter='';
 let viewingStage=null;
 let eicFilter='';
 let currentPage=1;
-const PAGE_SIZE=20;
+
 
 function nextId(){
   const nums=cases.map(c=>{const m=c.id.match(/RCL-(\d+)/);return m?parseInt(m[1]):0;});
@@ -1999,12 +2010,111 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape') closeModal();});
 function exportData(){const b=new Blob([JSON.stringify(cases,null,2)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(b);a.download='JAO_RCL_'+new Date().toISOString().slice(0,10)+'.json';a.click();toast('Exported');}
 function importData(e){const f=e.target.files[0];if(!f) return;const r=new FileReader();r.onload=ev=>{try{const d=JSON.parse(ev.target.result);if(!Array.isArray(d)) throw new Error();const ids=new Set(cases.map(c=>c.id));let n=0;d.forEach(c=>{if(!ids.has(c.id)){cases.push(c);n++;}});saveCases();renderList();toast('Imported '+n+' case(s)');}catch{alert('Invalid JSON file.');}};r.readAsText(f);e.target.value='';}
 
+function applyConfigToUI(){
+  const t=document.getElementById('hdr-title');
+  if(t) t.textContent=CFG.appTitle;
+  document.title='JAO — '+CFG.appTitle;
+  PAGE_SIZE=CFG.pageSize||20;
+  OD_CLIENT_ID=CFG.odClientId;
+  OD_TENANT_ID=CFG.odTenantId;
+  OD_FOLDER=CFG.odFolder;
+  OD_FILE=CFG.odFile;
+}
+
+function openAdmin(){
+  const wrap=document.getElementById('modal-wrap');
+  wrap.style.display='flex';
+  wrap.innerHTML=`<div class="modal" style="max-width:500px">
+    <h2>&#9881; Admin Settings</h2>
+    <div id="admin-login-section">
+      <p style="font-size:13px;color:var(--txt3);margin-bottom:14px">Enter admin password to access settings.</p>
+      <div class="fg" style="margin-bottom:12px">
+        <label>Password</label>
+        <input type="password" id="admin-pw" placeholder="Enter admin password" onkeydown="if(event.key==='Enter')verifyAdminPw()"/>
+      </div>
+      <div style="display:flex;gap:8px">
+        <button class="btn primary sm" onclick="verifyAdminPw()">Unlock</button>
+        <button class="btn sm" onclick="closeModal()">Cancel</button>
+      </div>
+      <div class="login-err" id="admin-pw-err"></div>
+    </div>
+    <div id="admin-settings-section" style="display:none"></div>
+  </div>`;
+  setTimeout(()=>document.getElementById('admin-pw')?.focus(),50);
+}
+
+function verifyAdminPw(){
+  const pw=document.getElementById('admin-pw')?.value;
+  if(pw===CFG.adminPassword){
+    document.getElementById('admin-login-section').style.display='none';
+    document.getElementById('admin-settings-section').style.display='';
+    renderAdminSettings();
+  } else {
+    document.getElementById('admin-pw-err').textContent='Incorrect password.';
+  }
+}
+
+function renderAdminSettings(){
+  const s=document.getElementById('admin-settings-section');
+  s.innerHTML=`
+    <div style="display:flex;flex-direction:column;gap:14px;margin-top:4px">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);border-bottom:1px solid var(--bdr);padding-bottom:6px">App Settings</div>
+      <div class="fg"><label>App title</label><input id="cfg-title" value="${esc(CFG.appTitle)}"/></div>
+      <div class="fg"><label>Cases per page</label><input type="number" id="cfg-pagesize" value="${CFG.pageSize}" min="5" max="100"/></div>
+
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);border-bottom:1px solid var(--bdr);padding-bottom:6px;margin-top:6px">OneDrive / Azure Settings</div>
+      <div class="fg"><label>SharePoint site <span style="font-weight:400;color:var(--txt3)">(e.g. jaosa.sharepoint.com:/sites/JAO)</span></label><input id="cfg-owner" value="${esc(CFG.odSharePointSite||'')}"/></div>
+      <div class="fg"><label>Azure Client ID</label><input id="cfg-clientid" value="${esc(CFG.odClientId)}"/></div>
+      <div class="fg"><label>Azure Tenant ID</label><input id="cfg-tenantid" value="${esc(CFG.odTenantId)}"/></div>
+      <div class="fg"><label>OneDrive folder</label><input id="cfg-folder" value="${esc(CFG.odFolder)}"/></div>
+      <div class="fg"><label>OneDrive file name</label><input id="cfg-file" value="${esc(CFG.odFile)}"/></div>
+
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);border-bottom:1px solid var(--bdr);padding-bottom:6px;margin-top:6px">Security</div>
+      <div class="fg"><label>Change admin password</label><input type="password" id="cfg-pw" placeholder="Leave blank to keep current"/></div>
+      <div class="fg"><label>Confirm new password</label><input type="password" id="cfg-pw2" placeholder="Repeat new password"/></div>
+
+      <div style="display:flex;gap:8px;margin-top:4px;align-items:center">
+        <button class="btn success sm" onclick="saveAdminSettings()">Save settings</button>
+        <button class="btn sm" onclick="closeModal()">Cancel</button>
+        <button class="btn danger sm" style="margin-left:auto" onclick="resetToDefaults()">Reset to defaults</button>
+      </div>
+      <div class="login-err" id="admin-save-msg" style="color:var(--grn)"></div>
+    </div>`;
+}
+
+function saveAdminSettings(){
+  const pw=document.getElementById('cfg-pw')?.value;
+  const pw2=document.getElementById('cfg-pw2')?.value;
+  if(pw&&pw!==pw2){document.getElementById('admin-save-msg').textContent='Passwords do not match.';document.getElementById('admin-save-msg').style.color='var(--red)';return;}
+  CFG.appTitle=document.getElementById('cfg-title')?.value.trim()||CFG.appTitle;
+  CFG.pageSize=parseInt(document.getElementById('cfg-pagesize')?.value)||20;
+  CFG.odSharePointSite=document.getElementById('cfg-owner')?.value.trim()||CFG.odSharePointSite;
+  CFG.odClientId=document.getElementById('cfg-clientid')?.value.trim()||CFG.odClientId;
+  CFG.odTenantId=document.getElementById('cfg-tenantid')?.value.trim()||CFG.odTenantId;
+  CFG.odFolder=document.getElementById('cfg-folder')?.value.trim()||CFG.odFolder;
+  CFG.odFile=document.getElementById('cfg-file')?.value.trim()||CFG.odFile;
+  if(pw) CFG.adminPassword=pw;
+  saveConfig(CFG);
+  applyConfigToUI();
+  renderList();
+  const msg=document.getElementById('admin-save-msg');
+  msg.textContent='✓ Settings saved.';msg.style.color='var(--grn)';
+  setTimeout(()=>closeModal(),1200);
+}
+
+function resetToDefaults(){
+  if(!confirm('Reset all settings to defaults? This cannot be undone.')) return;
+  CFG={...CONFIG_DEFAULTS};
+  saveConfig(CFG);applyConfigToUI();renderList();
+  toast('Settings reset to defaults');closeModal();
+}
+
 loadCases();
 onTypeFilterChange();
 renderList();
 applyMobileLayout();
-showLoginOverlay();
-initMsal();
+applyConfigToUI();
+// OneDrive sync disabled in demo mode
 </script>
 </body>
 </html>
