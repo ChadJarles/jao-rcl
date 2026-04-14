@@ -689,6 +689,9 @@ function showLoginOverlay(err=''){
   if(ol) ol.style.display='flex';
   const errEl=document.getElementById('login-err');
   if(errEl) errEl.textContent=err;
+  // Re-enable button if showing error
+  const btn=document.querySelector('.login-btn');
+  if(btn&&err){btn.disabled=false;btn.textContent='';btn.innerHTML=`<svg viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg> Sign in with Microsoft`;}
 }
 function hideLoginOverlay(){
   const ol=document.getElementById('login-overlay');
@@ -696,6 +699,23 @@ function hideLoginOverlay(){
 }
 
 function initMsal(){
+  const btn=document.querySelector('.login-btn');
+  if(btn){btn.disabled=true;btn.innerHTML='⏳ Initialising…';}
+
+  // Guard — if msal global not available
+  if(typeof msal==='undefined'||!msal.PublicClientApplication){
+    if(btn){btn.disabled=false;btn.innerHTML=`<svg viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg> Sign in with Microsoft`;}
+    showLoginOverlay('Auth library failed to load. Please hard-refresh the page (Ctrl+Shift+R / Cmd+Shift+R).');
+    return;
+  }
+
+  // Guard — if credentials not configured
+  if(!OD_CLIENT_ID||!OD_TENANT_ID){
+    if(btn){btn.disabled=false;btn.innerHTML=`<svg viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg> Sign in with Microsoft`;}
+    showLoginOverlay('Azure credentials not configured. Please contact your administrator.');
+    return;
+  }
+
   try{
     msalInstance=new msal.PublicClientApplication({
       auth:{clientId:OD_CLIENT_ID,authority:`https://login.microsoftonline.com/${OD_TENANT_ID}`,redirectUri:window.location.href.split('?')[0].split('#')[0]},
@@ -708,10 +728,20 @@ function initMsal(){
         currentUser={name:odAccount.name||odAccount.username,email:odAccount.username};
         odEnabled=true;hideLoginOverlay();setSyncStatus('syncing','Connecting…');odLoad();
       } else {
+        if(btn){btn.disabled=false;btn.innerHTML=`<svg viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg> Sign in with Microsoft`;}
         showLoginOverlay();
       }
-    }).catch(e=>{showLoginOverlay('Authentication error. Please try again.');console.error(e);});
-  }catch(e){showLoginOverlay('Failed to initialise auth library.');console.warn('MSAL init failed',e);}
+    }).catch(e=>{
+      if(btn){btn.disabled=false;btn.innerHTML=`<svg viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg> Sign in with Microsoft`;}
+      showLoginOverlay('Authentication error: '+e.message);
+      console.error('MSAL handleRedirectPromise error:',e);
+    });
+  }catch(e){
+    msalInstance=null;
+    if(btn){btn.disabled=false;btn.innerHTML=`<svg viewBox="0 0 21 21" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1" y="1" width="9" height="9" fill="#f25022"/><rect x="11" y="1" width="9" height="9" fill="#7fba00"/><rect x="1" y="11" width="9" height="9" fill="#00a4ef"/><rect x="11" y="11" width="9" height="9" fill="#ffb900"/></svg> Sign in with Microsoft`;}
+    showLoginOverlay('Failed to initialise: '+e.message+'. Please check Azure credentials in ⚙ Admin settings.');
+    console.error('MSAL init error:',e);
+  }
 }
 
 function updateOdBtn(){
@@ -771,7 +801,20 @@ function odSaveDebounced(){
 }
 
 async function odSignIn(){
-  if(!msalInstance){showLoginOverlay('Auth library not loaded.');return;}
+  if(!msalInstance){
+    // Try re-initialising before giving up
+    initMsal();
+    setTimeout(async()=>{
+      if(!msalInstance){showLoginOverlay('Could not initialise. Please refresh the page.');return;}
+      try{
+        const r=await msalInstance.loginPopup({scopes:OD_SCOPES});
+        odAccount=r.account;odEnabled=true;
+        currentUser={name:odAccount.name||odAccount.username,email:odAccount.username};
+        hideLoginOverlay();updateOdBtn();setSyncStatus('syncing','Loading…');await odLoad();
+      }catch(e){showLoginOverlay('Sign-in failed: '+e.message);console.error(e);}
+    },1500);
+    return;
+  }
   if(odAccount){
     if(confirm('Signed in as '+odAccount.username+'. Sign out?')){
       await msalInstance.logoutPopup({account:odAccount});
