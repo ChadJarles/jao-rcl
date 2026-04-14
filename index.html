@@ -658,7 +658,7 @@ const CONFIG_DEFAULTS={
   odTenantId:'367c4a6e-4a4f-4dd1-995e-ab80d0ec3064',
   odFolder:'JAO RCL',
   odFile:'jao-rcl-data.json',
-  odSharePointSite:'jaosa.sharepoint.com:/sites/JAO',
+  odOwnerEmail:'bahayev@jao.eu',
   adminPassword:'jao-admin',
 };
 
@@ -676,7 +676,7 @@ let OD_TENANT_ID=CFG.odTenantId;
 let OD_FILE=CFG.odFile;
 let OD_FOLDER=CFG.odFolder;
 let PAGE_SIZE=CFG.pageSize;
-const OD_SCOPES=['Files.ReadWrite','Sites.ReadWrite.All','User.Read'];
+const OD_SCOPES=['Files.ReadWrite','User.Read'];
 
 let msalInstance=null;
 let odAccount=null;
@@ -738,7 +738,7 @@ async function odLoad(){
   setSyncStatus('syncing','Loading…');
   const token=await odGetToken();if(!token){setSyncStatus('error','Not signed in');return;}
   try{
-    const res=await fetch(`https://graph.microsoft.com/v1.0/sites/${CFG.odSharePointSite}/drive/root:/${OD_FOLDER}/${OD_FILE}:/content`,{headers:{Authorization:'Bearer '+token}});
+    const res=await fetch(`https://graph.microsoft.com/v1.0/users/${CFG.odOwnerEmail}/drive/root:/${OD_FOLDER}/${OD_FILE}:/content`,{headers:{Authorization:'Bearer '+token}});
     if(res.status===404){setSyncStatus('syncing','Creating file…');await odSaveNow();}
     else if(res.ok){
       const data=await res.json();
@@ -757,7 +757,7 @@ async function odSaveNow(){
   const token=await odGetToken();if(!token) return;
   try{
     setSyncStatus('syncing','Saving…');
-    const res=await fetch(`https://graph.microsoft.com/v1.0/sites/${CFG.odSharePointSite}/drive/root:/${OD_FOLDER}/${OD_FILE}:/content`,{
+    const res=await fetch(`https://graph.microsoft.com/v1.0/users/${CFG.odOwnerEmail}/drive/root:/${OD_FOLDER}/${OD_FILE}:/content`,{
       method:'PUT',headers:{Authorization:'Bearer '+token,'Content-Type':'application/json'},body:JSON.stringify(cases,null,2)
     });
     if(res.ok){setSyncStatus('synced','✓ OneDrive');}else{throw new Error('HTTP '+res.status);}
@@ -2075,7 +2075,7 @@ function renderAdminSettings(){
       <div class="fg"><label>Cases per page</label><input type="number" id="cfg-pagesize" value="${CFG.pageSize}" min="5" max="100"/></div>
 
       <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);border-bottom:1px solid var(--bdr);padding-bottom:6px;margin-top:6px">OneDrive / Azure Settings</div>
-      <div class="fg"><label>SharePoint site <span style="font-weight:400;color:var(--txt3)">(e.g. jaosa.sharepoint.com:/sites/JAO)</span></label><input id="cfg-owner" value="${esc(CFG.odSharePointSite||'')}"/></div>
+      <div class="fg"><label>Database owner email <span style="font-weight:400;color:var(--txt3)">(whose OneDrive stores the data)</span></label><input id="cfg-owner" value="${esc(CFG.odOwnerEmail||'')}"/></div>
       <div class="fg"><label>Azure Client ID</label><input id="cfg-clientid" value="${esc(CFG.odClientId)}"/></div>
       <div class="fg"><label>Azure Tenant ID</label><input id="cfg-tenantid" value="${esc(CFG.odTenantId)}"/></div>
       <div class="fg"><label>OneDrive folder</label><input id="cfg-folder" value="${esc(CFG.odFolder)}"/></div>
@@ -2100,7 +2100,7 @@ function saveAdminSettings(){
   if(pw&&pw!==pw2){document.getElementById('admin-save-msg').textContent='Passwords do not match.';document.getElementById('admin-save-msg').style.color='var(--red)';return;}
   CFG.appTitle=document.getElementById('cfg-title')?.value.trim()||CFG.appTitle;
   CFG.pageSize=parseInt(document.getElementById('cfg-pagesize')?.value)||20;
-  CFG.odSharePointSite=document.getElementById('cfg-owner')?.value.trim()||CFG.odSharePointSite;
+  CFG.odOwnerEmail=document.getElementById('cfg-owner')?.value.trim()||CFG.odOwnerEmail;
   CFG.odClientId=document.getElementById('cfg-clientid')?.value.trim()||CFG.odClientId;
   CFG.odTenantId=document.getElementById('cfg-tenantid')?.value.trim()||CFG.odTenantId;
   CFG.odFolder=document.getElementById('cfg-folder')?.value.trim()||CFG.odFolder;
