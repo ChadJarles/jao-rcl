@@ -654,12 +654,12 @@ const ADMIN_KEY='jao-rcl-admin-cfg';
 const CONFIG_DEFAULTS={
   appTitle:'Registration Checklist (RCL)',
   pageSize:20,
-  odClientId:'0ccab729-7d2b-43ac-a341-fc8285f611a2',
-  odTenantId:'367c4a6e-4a4f-4dd1-995e-ab80d0ec3064',
+  odClientId:'',
+  odTenantId:'',
   odFolder:'JAO RCL',
   odFile:'jao-rcl-data.json',
-  odOwnerEmail:'bahayev@jao.eu',
-  adminPassword:'jao-admin',
+  odOwnerEmail:'',
+  adminPassword:'',
 };
 
 function loadConfig(){
@@ -717,7 +717,7 @@ function initMsal(){
 function updateOdBtn(){
   const btn=document.getElementById('od-btn');if(!btn) return;
   if(odAccount){btn.textContent='☁ '+odAccount.name.split(' ')[0];btn.title='Signed in as '+odAccount.username+' — click to sign out';}
-  else{btn.textContent='☁ Sign in';btn.title='Sign in with Microsoft 365 to sync via OneDrive';}
+  else{btn.textContent='☁ Sign in';btn.title='Sign in with Microsoft 365';}
 }
 
 function setSyncStatus(type,msg){
@@ -2033,6 +2033,57 @@ function applyConfigToUI(){
   OD_FILE=CFG.odFile;
 }
 
+function isConfigured(){
+  return CFG.odClientId&&CFG.odTenantId&&CFG.odOwnerEmail&&CFG.adminPassword;
+}
+
+function showFirstRunWizard(){
+  const wrap=document.getElementById('modal-wrap');
+  wrap.style.display='flex';
+  wrap.innerHTML=`<div class="modal" style="max-width:520px">
+    <h2>👋 Welcome to JAO RCL</h2>
+    <p style="font-size:13px;color:var(--txt3);margin-bottom:20px">This is your first time running the app. Please configure it before use. You'll only need to do this once.</p>
+    <div style="display:flex;flex-direction:column;gap:14px">
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);border-bottom:1px solid var(--bdr);padding-bottom:6px">Microsoft 365 / Azure Settings</div>
+      <div class="fg"><label>Azure Client ID *</label><input id="fw-clientid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/></div>
+      <div class="fg"><label>Azure Tenant ID *</label><input id="fw-tenantid" placeholder="xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx"/></div>
+      <div class="fg"><label>Database owner email * <span style="font-weight:400;color:var(--txt3)">(whose OneDrive stores the shared data)</span></label><input id="fw-email" placeholder="name@company.com"/></div>
+      <div class="fg"><label>OneDrive folder</label><input id="fw-folder" value="JAO RCL" placeholder="JAO RCL"/></div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);border-bottom:1px solid var(--bdr);padding-bottom:6px;margin-top:4px">Security</div>
+      <div class="fg"><label>Set admin password * <span style="font-weight:400;color:var(--txt3)">(used to access admin settings)</span></label><input type="password" id="fw-pw" placeholder="Choose a password"/></div>
+      <div class="fg"><label>Confirm admin password *</label><input type="password" id="fw-pw2" placeholder="Repeat password"/></div>
+      <div class="login-err" id="fw-err" style="color:var(--red)"></div>
+      <button class="btn primary" onclick="saveFirstRun()" style="margin-top:4px">Save & continue</button>
+    </div>
+  </div>`;
+}
+
+function saveFirstRun(){
+  const clientId=document.getElementById('fw-clientid')?.value.trim();
+  const tenantId=document.getElementById('fw-tenantid')?.value.trim();
+  const email=document.getElementById('fw-email')?.value.trim();
+  const folder=document.getElementById('fw-folder')?.value.trim()||'JAO RCL';
+  const pw=document.getElementById('fw-pw')?.value;
+  const pw2=document.getElementById('fw-pw2')?.value;
+  const err=document.getElementById('fw-err');
+
+  if(!clientId||!tenantId||!email||!pw){err.textContent='Please fill in all required fields.';return;}
+  if(pw!==pw2){err.textContent='Passwords do not match.';return;}
+  if(pw.length<4){err.textContent='Password must be at least 4 characters.';return;}
+
+  CFG.odClientId=clientId;
+  CFG.odTenantId=tenantId;
+  CFG.odOwnerEmail=email;
+  CFG.odFolder=folder;
+  CFG.adminPassword=pw;
+  saveConfig(CFG);
+  applyConfigToUI();
+  closeModal();
+  // Re-init MSAL with new credentials
+  msalInstance=null;
+  initMsal();
+}
+
 function openAdmin(){
   const wrap=document.getElementById('modal-wrap');
   wrap.style.display='flex';
@@ -2074,7 +2125,7 @@ function renderAdminSettings(){
       <div class="fg"><label>App title</label><input id="cfg-title" value="${esc(CFG.appTitle)}"/></div>
       <div class="fg"><label>Cases per page</label><input type="number" id="cfg-pagesize" value="${CFG.pageSize}" min="5" max="100"/></div>
 
-      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);border-bottom:1px solid var(--bdr);padding-bottom:6px;margin-top:6px">OneDrive / Azure Settings</div>
+      <div style="font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.06em;color:var(--txt3);border-bottom:1px solid var(--bdr);padding-bottom:6px;margin-top:6px">Microsoft 365 / Storage Settings</div>
       <div class="fg"><label>Database owner email <span style="font-weight:400;color:var(--txt3)">(whose OneDrive stores the data)</span></label><input id="cfg-owner" value="${esc(CFG.odOwnerEmail||'')}"/></div>
       <div class="fg"><label>Azure Client ID</label><input id="cfg-clientid" value="${esc(CFG.odClientId)}"/></div>
       <div class="fg"><label>Azure Tenant ID</label><input id="cfg-tenantid" value="${esc(CFG.odTenantId)}"/></div>
@@ -2126,8 +2177,12 @@ onTypeFilterChange();
 renderList();
 applyMobileLayout();
 applyConfigToUI();
-showLoginOverlay();
-initMsal();
+if(!isConfigured()){
+  showFirstRunWizard();
+} else {
+  showLoginOverlay();
+  initMsal();
+}
 </script>
 </body>
 </html>
